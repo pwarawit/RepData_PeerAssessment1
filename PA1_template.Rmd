@@ -1,13 +1,14 @@
 # Reproducible Research: Peer Assessment 1
 This is the result of the peer assessment 1 assignment, part of Reproducible Research class.
+Written by PanaEk Warawit during July 15-20, 2014
 
 ## Loading and preprocessing the data
-The below code chunk unzip the **activity.zip** file and then load data into **act_data** variable. After that, it transform the date variable to be date & time by combining date and interval.
+The below code chunk unzip the **activity.zip** file and then load data into **act_data** variable. After that, it change interval data into 4-character format with leading zero to indicate time of day as well as converting date coloumn into date variable.
 ```{r loading}
 unzip("activity.zip")
 act_data <- read.csv("activity.csv")
 act_data$interval <- sprintf("%04d",as.numeric(act_data$interval))
-act_data$date <- strptime(paste(act_data$date, act_data$interval, sep=" "), format="%Y-%m-%d %H%M")
+act_data$date <- strptime(act_data$date, format="%Y-%m-%d")
 ```
 
 ## What is mean total number of steps taken per day?
@@ -35,16 +36,18 @@ Median = **`r act_median`** steps per day
 
 ## What is the average daily activity pattern?
 #### 1. Make a time series plot (i.e. `type = "l"`) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+Below code chunk create new data frame calls avg_data that compute the average (mean) number of steps for each 5-min interval across all days. Then plot it. Please note that during the strptime conversion of interval column, the current date information has been included into interval column as part of date/time object. I choose this approach instead of converting interval to factor/character which will not create the desired time-serie line plot. 
+
 ```{r average_daily_pattern}
-avg_step_interval <- as.data.frame(tapply(act_data$steps, act_data$interval, mean, na.rm=TRUE))
-avg_step_interval <- cbind(as.data.frame(row.names(avg_step_interval)), avg_step_interval)
-names(avg_step_interval) <- c("interval","avg_steps")
-with(avg_step_interval, {plot(interval, avg_steps, type="l", xlab="Time of day", ylab="Avg steps", main="Daily Activity Pattern" )})
+avg_data <- aggregate(act_data$steps, list(act_data$interval), FUN=mean, na.rm=TRUE)
+names(avg_data) <- c("interval", "avg_step")
+avg_data$interval <- strptime(avg_data$interval, "%H%M")
+with(avg_data, {plot(interval, avg_step, type="l", xlab="Time of day", ylab="Avg steps", main="Daily Activity Pattern" )})
 
 ```
 #### 2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
 ```{r max_step_interval}
-max_step_interval <- avg_step_interval[avg_step_interval$avg_steps==max(avg_step_interval$avg_steps),"interval"]
+max_step_interval <- strftime(avg_data[avg_data$avg_step==max(avg_data$avg_step),"interval"], format="%H:%M")
 ```
 The interval with maximum average number of steps is **`r max_step_interval`** interval. 
 
@@ -59,16 +62,18 @@ sum(is.na(act_data$step))
 There are **`r sum(is.na(act_data$step))`** occurances of NA values.
 
 #### 2. Devise a strategy for filling in all of the missing values in the dataset.
-We will fill the missing value with the mean of that 5-minute interval across all days, since the data frame containing avarage steps for each interval has already been calculated. The object name is **avg_step_interval**.
+We will fill the missing value with the mean of that 5-minute interval across all days, since the data frame containing avarage steps for each interval has already been calculated. The object name is **avg_data**.
 
 #### 3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
-In order to create new dataset with the filled missing value, we need to join 2 data frame(act_data, and avg_step_interval) together with below code chunk.
+In order to create new dataset with the filled missing value, we need to join 2 data frame(act_data, and avg_data) together with below code chunk. The result dataset will be named **newdata**.
 
 ```{r filling_na_values}
 library(plyr)
-temp1 <- join(act_data, avg_step_interval, by="interval")
+# Change the avg_data$interval back to character to join with act_data
+avg_data$interval <- strftime(avg_data$interval, format="%H%M")
+temp1 <- join(act_data, avg_data, by="interval")
 temp2 <- temp1[!is.na(temp1$steps),c("steps","date","interval")]
-temp3 <- temp1[is.na(temp1$steps),c("avg_steps","date","interval")]
+temp3 <- temp1[is.na(temp1$steps),c("avg_step","date","interval")]
 names(temp3) <- c("steps", "date", "interval")
 newdata <- arrange(rbind(temp2, temp3), date)
 ```
@@ -100,7 +105,8 @@ The histogram is intentionally put side-by-side with the histogram of the origin
 act_mean_na_filled <- mean(tapply(newdata$steps, as.Date(act_data$date), sum))
 act_median_na_filled <- median(tapply(newdata$steps, as.Date(act_data$date), sum))
 ```
-Mean = **`r format(act_mean_na_filled, digits=6, nsmall=3)`** steps per day
+
+Mean = **`r format(act_mean_na_filled, digits=6, nsmall=3)`** steps per day  
 Median = **`r format(act_median_na_filled, digits=6, nsmall=3)`** steps per day
 
 This again, confirms the conclusion that the mean and median of 2 dataset do not have significant differences.
@@ -124,55 +130,19 @@ newdata$factor <- ifelse(weekdays(as.Date(newdata$date)) %in% c("Saturday","Sund
 
 
 ```{r wkdays_wkends_compare}
-# Prepare weekdays data
-wkdays_full <- newdata[weekdays(as.Date(newdata$date))!=c("Satureday","Sunday"),]
-wkdays <- as.data.frame(tapply(wkdays_full$steps, wkdays_full$interval, mean))
-wkdays <- cbind(as.data.frame(row.names(wkdays)), wkdays)
-names(wkdays) <- c("interval","avg_steps")
-
-# Preare weekends data
-wkends_full <- newdata[weekdays(as.Date(newdata$date))==c("Satureday","Sunday"),]
-wkends <- as.data.frame(tapply(wkends_full$steps, wkends_full$interval, mean))
-wkends <- cbind(as.data.frame(row.names(wkends)), wkends)
-names(wkends) <- c("interval","avg_steps")
-
-# Plot comparison
-#par(mfrow = c(2,1))
-with(wkdays, {plot(interval, avg_steps, type="l", xlab="Time of day", ylab="Avg steps", main="Weekdays Activity Pattern" )})
-with(wkends, {plot(interval, avg_steps, type="l", xlab="Time of day", ylab="Avg steps", main="Weekends Activity Pattern" )})
+# Compute the mean of newdata group by weekends/weekday factor and then by interval, put it in avg_newdata 
+avg_newdata <- aggregate(newdata$steps, list(newdata$factor,newdata$interval), FUN=mean)
+names(avg_newdata) <- c("DayType", "interval", "avg_step")
+avg_newdata$interval <- strptime(avg_newdata$interval, "%H%M")
+# Create a 2 panels plot, one for each type of day
+par(mfcol = c(2, 1))
+with(avg_newdata[avg_newdata$DayType=="weekdays",], 
+     {plot(interval, avg_step, type="l",xlab="Time of day", ylab="Avg steps", main="Week Days Activity Pattern")})
+with(avg_newdata[avg_newdata$DayType=="weekends",], 
+     {plot(interval, avg_step, type="l",xlab="Time of day", ylab="Avg steps", main="Week Ends Activity Pattern")})
 
 ```
 
 **Conclusion** Yes, there are differences between weekdays and weekends activity patterns. There are more during the day activities on weekends compare to weekdays. 
 
-```{r weekdays_factor}
 
-
-```
-
-
-
-```{r wkdays_wkends_compare}
-
-wkdays_full <- newdata[weekdays(as.Date(newdata$date))!=c("Sunday","Monday"),]
-wkdays <- as.data.frame(tapply(wkdays_full$steps, wkdays_full$interval, mean))
-wkdays <- cbind(as.data.frame(row.names(wkdays)), wkdays)
-names(wkdays) <- c("interval","avg_steps")
-with(wkdays, {plot(interval, avg_steps, type="l", xlab="Time of day", ylab="Avg steps", main="Daily Activity Pattern" )})
-
-wkends_full <- newdata[weekdays(as.Date(newdata$date))==c("Sunday","Monday"),]
-wkends <- as.data.frame(tapply(wkends_full$steps, wkends_full$interval, mean))
-wkends <- cbind(as.data.frame(row.names(wkends)), wkends)
-names(wkends) <- c("interval","avg_steps")
-with(wkends, {plot(interval, avg_steps, type="l", xlab="Time of day", ylab="Avg steps", main="Daily Activity Pattern" )})
-
-
-
-```
-
-newdata$factor 
-
-newdata$factor <- ifelse(weekdays(as.Date(newdata$date)) %in% c("Saturday","Sunday"),"weekends","weekdays")
-mydata <- as.data.frame(tapply(newdata$steps, list(newdata$interval, newdata$factor), mean))
-mydata <- cbind(as.data.frame(row.names(mydata)), mydata)
-names(mydata) <- c("interval","weekday_steps","weekend_steps")
